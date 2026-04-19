@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Calco — Trazado con Cámara</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --accent: #e8d5a3;
+    --accent2: #a3c4e8;
+    --text: #f0ece0;
+    --muted: #666;
+    --danger: #e87a6a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+  }
+  .logo span { color: var(--muted); font-size: 11px; font-family: 'DM Mono', monospace; display: block; letter-spacing: 2px; margin-top: -4px; }
+
+  .header-btns { display: flex; gap: 8px; }
+
+  .btn-icon {
+    width: 36px; height: 36px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: border-color .2s, background .2s;
+  }
+  .btn-icon:hover { border-color: var(--accent); background: #ffffff08; }
+  .btn-icon.active { border-color: var(--accent); color: var(--accent); background: #e8d5a308; }
+
+  /* ── CANVAS AREA ── */
+  #stage {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #videoEl {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #overlayImg {
+    position: absolute;
+    top: 0; left: 0;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    transform-origin: top left;
+    display: none;
+    max-width: none;
+  }
+  #overlayImg.dragging { cursor: grabbing; }
+
+  /* placeholder when no camera */
+  #placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 32px;
+  }
+  #placeholder svg { opacity: .3; }
+
+  /* ── BOTTOM PANEL ── */
+  #panel {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px 20px;
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .ctrl-group label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .ctrl-group label span { color: var(--accent); font-size: 11px; letter-spacing: 0; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 3px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 11px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .btn.primary { background: var(--accent); color: #0d0d0d; border-color: var(--accent); font-weight: 500; }
+  .btn.primary:hover { background: #f5e5b8; }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .btn.danger:hover { background: #e87a6a12; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--accent);
+    color: #0d0d0d;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s;
+    white-space: nowrap;
+    z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── GRID OVERLAY ── */
+  #gridOverlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  #gridOverlay.visible { display: block; }
+
+  /* crosshair */
+  #crosshair {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+  }
+  #crosshair.visible { display: block; }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,.15);
+  }
+  #crosshair::before { top: 50%; left: 0; right: 0; height: 1px; }
+  #crosshair::after { left: 50%; top: 0; bottom: 0; width: 1px; }
+
+  /* info badge */
+  #infoBadge {
+    position: absolute;
+    top: 12px; left: 12px;
+    background: #00000088;
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    display: none;
+    pointer-events: none;
+  }
+  #infoBadge.visible { display: block; }
+
+  /* flip indicator */
+  #flipBadge {
+    position: absolute;
+    top: 12px; right: 12px;
+    background: #e8d5a322;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    display: none;
+  }
+  #flipBadge.visible { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    Calco
+    <span>TRACING TOOL</span>
+  </div>
+  <div class="header-btns">
+    <button class="btn-icon" id="btnGrid" title="Cuadrícula">⊞</button>
+    <button class="btn-icon" id="btnCross" title="Punto central">⊕</button>
+    <button class="btn-icon" id="btnFlip" title="Espejo horizontal">⇄</button>
+    <button class="btn-icon" id="btnCam" title="Cambiar cámara">🔄</button>
+  </div>
+</header>
+
+<div id="stage">
+  <video id="videoEl" playsinline autoplay muted></video>
+  <img id="overlayImg" draggable="false" />
+  <div id="gridOverlay"></div>
+  <div id="crosshair"></div>
+  <div id="placeholder">
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+      <rect x="8" y="16" width="48" height="36" rx="4" stroke="white" stroke-width="2"/>
+      <circle cx="32" cy="34" r="10" stroke="white" stroke-width="2"/>
+      <circle cx="32" cy="34" r="5" fill="white"/>
+      <rect x="24" y="10" width="16" height="6" rx="2" stroke="white" stroke-width="2"/>
+    </svg>
+    Activa la cámara para empezar.<br>Pega o sube una imagen para calcar encima.
+  </div>
+  <div id="infoBadge"></div>
+  <div id="flipBadge">ESPEJO</div>
+</div>
+
+<div id="panel">
+  <div class="controls-grid">
+    <div class="ctrl-group">
+      <label>Opacidad <span id="valOpacity">60%</span></label>
+      <input type="range" id="sliderOpacity" min="0" max="100" value="60">
+    </div>
+    <div class="ctrl-group">
+      <label>Escala <span id="valScale">100%</span></label>
+      <input type="range" id="sliderScale" min="10" max="300" value="100">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn primary" id="btnCamStart">📷 Cámara</button>
+    <button class="btn" id="btnPaste">📋 Pegar</button>
+    <button class="btn" id="btnUpload">⬆ Subir</button>
+    <button class="btn danger" id="btnClear" style="display:none">✕</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" style="display:none">
+<div id="toast"></div>
+
+<script>
+  // ── STATE ──
+  const state = {
+    stream: null,
+    facingMode: 'environment',
+    imgLoaded: false,
+    flipped: false,
+    showGrid: false,
+    showCross: false,
+    // transform
+    posX: 0, posY: 0,
+    scale: 1,
+    opacity: 0.6,
+    // drag
+    dragging: false,
+    startX: 0, startY: 0,
+    origX: 0, origY: 0,
+    // pinch
+    pinching: false,
+    pinchDist: 0,
+    pinchScale: 1,
+  };
+
+  const video = document.getElementById('videoEl');
+  const overlay = document.getElementById('overlayImg');
+  const stage = document.getElementById('stage');
+  const placeholder = document.getElementById('placeholder');
+  const infoBadge = document.getElementById('infoBadge');
+  const flipBadge = document.getElementById('flipBadge');
+
+  // ── CAMERA ──
+  async function startCamera() {
+    try {
+      if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: state.facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      state.stream = stream;
+      video.srcObject = stream;
+      placeholder.style.display = 'none';
+      toast('Cámara activa ✓');
+    } catch(e) {
+      toast('Error: ' + (e.message || 'no se pudo acceder a la cámara'));
+    }
+  }
+
+  document.getElementById('btnCamStart').addEventListener('click', startCamera);
+
+  document.getElementById('btnCam').addEventListener('click', () => {
+    state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+    if (state.stream) startCamera();
+  });
+
+  // ── OVERLAY TRANSFORM ──
+  function applyTransform() {
+    const scaleX = state.flipped ? -state.scale : state.scale;
+    overlay.style.transform = `translate(${state.posX}px, ${state.posY}px) scale(${scaleX}, ${state.scale})`;
+    overlay.style.opacity = state.opacity;
+    updateBadge();
+  }
+
+  function updateBadge() {
+    if (!state.imgLoaded) return;
+    infoBadge.classList.add('visible');
+    infoBadge.textContent = `pos ${Math.round(state.posX)}, ${Math.round(state.posY)} · escala ${Math.round(state.scale * 100)}%`;
+  }
+
+  // ── SLIDERS ──
+  const sliderOpacity = document.getElementById('sliderOpacity');
+  const sliderScale = document.getElementById('sliderScale');
+  const valOpacity = document.getElementById('valOpacity');
+  const valScale = document.getElementById('valScale');
+
+  sliderOpacity.addEventListener('input', () => {
+    state.opacity = sliderOpacity.value / 100;
+    valOpacity.textContent = sliderOpacity.value + '%';
+    if (state.imgLoaded) overlay.style.opacity = state.opacity;
+  });
+
+  sliderScale.addEventListener('input', () => {
+    state.scale = sliderScale.value / 100;
+    valScale.textContent = sliderScale.value + '%';
+    if (state.imgLoaded) applyTransform();
+  });
+
+  // ── LOAD IMAGE ──
+  function loadImage(src) {
+    overlay.src = src;
+    overlay.onload = () => {
+      state.imgLoaded = true;
+      // center image
+      const sw = stage.offsetWidth, sh = stage.offsetHeight;
+      state.posX = (sw - overlay.naturalWidth) / 2;
+      state.posY = (sh - overlay.naturalHeight) / 2;
+      state.scale = 1;
+      sliderScale.value = 100;
+      valScale.textContent = '100%';
+      overlay.style.display = 'block';
+      document.getElementById('btnClear').style.display = '';
+      applyTransform();
+      toast('Imagen cargada ✓');
+    };
+  }
+
+  // paste
+  document.getElementById('btnPaste').addEventListener('click', async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find(t => t.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          loadImage(URL.createObjectURL(blob));
+          return;
+        }
+      }
+      toast('No hay imagen en el portapapeles');
+    } catch(e) {
+      toast('Usa el botón Subir o pega desde el portapapeles');
+    }
+  });
+
+  // global paste event
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        loadImage(URL.createObjectURL(blob));
+        return;
+      }
+    }
+  });
+
+  // file upload
+  document.getElementById('btnUpload').addEventListener('click', () => document.getElementById('fileInput').click());
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) loadImage(URL.createObjectURL(file));
+    e.target.value = '';
+  });
+
+  // clear
+  document.getElementById('btnClear').addEventListener('click', () => {
+    overlay.style.display = 'none';
+    state.imgLoaded = false;
+    infoBadge.classList.remove('visible');
+    document.getElementById('btnClear').style.display = 'none';
+    toast('Imagen eliminada');
+  });
+
+  // ── DRAG (TOUCH & MOUSE) ──
+  function getDist(t1, t2) {
+    const dx = t1.clientX - t2.clientX, dy = t1.clientY - t2.clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  overlay.addEventListener('mousedown', (e) => {
+    if (!state.imgLoaded) return;
+    state.dragging = true;
+    state.startX = e.clientX;
+    state.startY = e.clientY;
+    state.origX = state.posX;
+    state.origY = state.posY;
+    overlay.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!state.dragging) return;
+    state.posX = state.origX + (e.clientX - state.startX);
+    state.posY = state.origY + (e.clientY - state.startY);
+    applyTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    state.dragging = false;
+    overlay.classList.remove('dragging');
+  });
+
+  // touch drag & pinch
+  overlay.addEventListener('touchstart', (e) => {
+    if (!state.imgLoaded) return;
+    if (e.touches.length === 1) {
+      state.dragging = true;
+      state.pinching = false;
+      state.startX = e.touches[0].clientX;
+      state.startY = e.touches[0].clientY;
+      state.origX = state.posX;
+      state.origY = state.posY;
+    } else if (e.touches.length === 2) {
+      state.dragging = false;
+      state.pinching = true;
+      state.pinchDist = getDist(e.touches[0], e.touches[1]);
+      state.pinchScale = state.scale;
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  overlay.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && state.dragging) {
+      state.posX = state.origX + (e.touches[0].clientX - state.startX);
+      state.posY = state.origY + (e.touches[0].clientY - state.startY);
+      applyTransform();
+    } else if (e.touches.length === 2 && state.pinching) {
+      const dist = getDist(e.touches[0], e.touches[1]);
+      state.scale = Math.min(3, Math.max(0.1, state.pinchScale * (dist / state.pinchDist)));
+      sliderScale.value = Math.round(state.scale * 100);
+      valScale.textContent = sliderScale.value + '%';
+      applyTransform();
+    }
+    e.preventDefault();
+  }, { passive: false });
+
+  overlay.addEventListener('touchend', () => {
+    state.dragging = false;
+    state.pinching = false;
+  });
+
+  // ── TOGGLES ──
+  document.getElementById('btnGrid').addEventListener('click', () => {
+    state.showGrid = !state.showGrid;
+    document.getElementById('gridOverlay').classList.toggle('visible', state.showGrid);
+    document.getElementById('btnGrid').classList.toggle('active', state.showGrid);
+  });
+
+  document.getElementById('btnCross').addEventListener('click', () => {
+    state.showCross = !state.showCross;
+    document.getElementById('crosshair').classList.toggle('visible', state.showCross);
+    document.getElementById('btnCross').classList.toggle('active', state.showCross);
+  });
+
+  document.getElementById('btnFlip').addEventListener('click', () => {
+    state.flipped = !state.flipped;
+    flipBadge.classList.toggle('visible', state.flipped);
+    document.getElementById('btnFlip').classList.toggle('active', state.flipped);
+    if (state.imgLoaded) applyTransform();
+  });
+
+  // ── TOAST ──
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+</script>
+</body>
+</html>
